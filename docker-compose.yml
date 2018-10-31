@@ -1,0 +1,111 @@
+version: '3'
+
+services:
+
+  traefik:
+    image: traefik # The official Traefik docker image
+    command: --api --docker # Enables the web UI and tells Træfik to listen to docker
+    restart: always
+    ports:
+      - "80:80"     # The HTTP port
+      - "443:443"   # The SSL port
+      - "8080:8080" # The Web UI (enabled by --api)
+    networks:
+      - proxy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock # So that Traefik can listen to the Docker events
+      - /opt/t6/traefik.toml:/traefik.toml
+      - /opt/t6/acme.json:/acme.json
+    labels:                                                    
+      - "traefik.frontend.rule=Host:monitor.mywebsite.com"
+      - "traefik.enable=true"
+      - "traefik.port=8080"
+      - "traefik.frontend.auth.basic=${AUTH_BASIC}"
+    container_name: traefik # Do not use container_name for containers you want to scale                                   
+
+  blog_dog:
+    image: wordpress:4.9-php5.6-apache
+    environment:
+      WORDPRESS_DB_PASSWORD: ${WP_PWD}
+      WORDPRESS_DB_HOST: mysql_dog:3306
+    volumes:
+      - blog_dog:/var/www/html
+    labels:
+      - traefik.backend=dog
+      - traefik.frontend.rule=Host:dog.mywebsite.com
+      - traefik.docker.network=proxy
+      - traefik.port=80
+    networks:
+      - internal
+      - proxy
+    depends_on:
+      - mysql_dog
+
+  mysql_dog:
+    image: mysql:5.7
+    environment:
+      MYSQL_ROOT_PASSWORD: ${WP_PWD}
+    volumes:
+      - mysql_dog:/var/lib/mysql
+    networks:
+      - internal
+    labels:
+      - traefik.enable=false
+
+  blog_cat:                                                      
+    image: wordpress:4.9-php5.6-apache                       
+    environment:                                             
+      WORDPRESS_DB_PASSWORD: ${WP_PWD2}                       
+      WORDPRESS_DB_HOST: mysql_cat:3306                     
+    volumes:
+      - blog_cat:/var/www/html
+    labels:                                                  
+      - traefik.backend=cat                                 
+      - traefik.frontend.rule=Host:cat.mywebsite.com    
+      - traefik.docker.network=proxy                         
+      - traefik.port=80                                      
+    networks:                                                
+      - internal                                             
+      - proxy                                                
+    depends_on:                                              
+      - mysql_cat                                           
+                                                            
+  mysql_cat:                                                
+    image: mysql:5.7                                         
+    environment:                                             
+      MYSQL_ROOT_PASSWORD: ${WP_PWD2}                         
+    volumes:
+      - mysql_cat:/var/lib/mysql
+    networks:                                                
+      - internal                                             
+    labels:                                                  
+      - traefik.enable=false                                 
+
+  microservice:
+    build: ./node_app
+    environment:
+      - NODE_ENV=development
+      - NODE_PORT=3000
+    expose:
+      - "3000"
+    restart: always
+    labels:                                                  
+      - traefik.backend=microservice                                 
+      - traefik.frontend.rule=Host:node.mywebsite.com    
+      - traefik.docker.network=proxy                         
+      - traefik.port=3000                                      
+    networks:                                                
+      - proxy
+
+volumes:
+  blog_dog:
+  mysql_dog:
+  blog_cat:
+  mysql_cat:
+
+networks:
+  proxy:
+    external: true
+  internal:
+    external: false
+
